@@ -2,6 +2,7 @@ from sklearn.model_selection import train_test_split
 from sklearn import metrics
 from sklearn.feature_extraction.text import CountVectorizer
 from xgboost import XGBClassifier
+from sklearn.model_selection import GridSearchCV
 import pandas as pd
 
 # Memakai XGBoost
@@ -23,9 +24,11 @@ y_test = data_test['label']
 
 y_train = y_train.replace(maps)
 y_test = y_test.replace(maps)
-count_df = pd.DataFrame(X_train, columns=vectorizer.get_feature_names_out())
 
-model = XGBClassifier()
+model = XGBClassifier(n_estimators=500, tree_method='hist',
+                      subsample=0.8, random_state=1,
+                      eta=0.3, max_depth=18)
+
 model.fit(X_train, y_train)
 
 y_pred = model.predict(X_test)
@@ -40,3 +43,19 @@ print('Precision Score: {:.4f}'.format(prec))
 print('Recall Score: {:.4f}'.format(rec))
 print('F1 Score: {:.4f}'.format(f1))
 print('Accuracy Score: {:.4f}'.format(acc))
+
+
+# Grid Search for best Params
+# model = XGBClassifier(tree_method='hist')
+# parameters = {'n_estimators': [5, 100, 300, 500, 1000],
+#               'learning_rate': [0.05, 0.1, 0.2, 0.3],
+#               'max_depth': [6, 12, 18, 24],
+#               'subsample': [0, 5, 0, 67, 0.8]}
+
+
+# clf = GridSearchCV(model, parameters, n_jobs=-1)
+
+# clf.fit(X_train, y_train)
+
+# model_params = clf.best_params_
+# print(model_params)
