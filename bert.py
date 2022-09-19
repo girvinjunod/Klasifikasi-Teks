@@ -2,39 +2,36 @@ import argparse
 import logging
 import os
 import pickle
+import re
 
-import numpy as np
 import pandas as pd
-from tensorflow.keras.layers import LSTM, Dense, Input
-from tensorflow.keras.models import Model
+from emoji import demojize
 from tensorflow.keras.optimizers import Adam
-from transformers import BertConfig, BertTokenizerFast, TFAutoModel
+from transformers import BertConfig, BertTokenizerFast, TFBertForSequenceClassification
 
 from utils.constants import MAPS, TEST_PATH, TRAIN_PATH
 
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
 
-def preprocess(train):
-    no, yes = train["label"].value_counts()
+def preprocess(x_train):
+    preprocess_func = [
+        lambda x: x.lower(),
+        lambda x: re.sub(r"@[^a-zA-Z0-9_]+", "@USER", x),
+        lambda x: re.sub(r"#[^a-zA-Z0-9_]+", "@HASHTAG", x),
+        lambda x: re.sub(r"http[sS]\S+", "HTTPURL", x),
+        lambda x: re.sub(r"www.\S+", "HTTPURL", x),
+        lambda x: re.sub(r"bit.ly\S+", "HTTPURL", x),
+        lambda x: re.sub(r"\s+[a-zA-Z]\S+", "", x),
+        lambda x: demojize(x),
+        lambda x: x.strip(),
+    ]
 
-    diff = abs(no - yes)
-
-    if no > yes:
-        no_indices = train.index[train["label"] == "no"]
-        indices = np.random.choice(no_indices, diff, replace=False)
-    elif yes > no:
-        yes_indices = train.index[train["label"] == "yes"]
-        indices = np.random.choice(yes_indices, diff, replace=False)
-
-    return train.drop(indices)
+    x_train = [x_train.apply(func) for func in preprocess_func]
 
 
-def getTokenizer():
-    return BertTokenizerFast.from_pretrained(
-        pretrained_model_name_or_path="bert-base-uncased",
-        config=BertConfig.from_pretrained("bert-base-uncased"),
-    )
+def getTokenizer(model_name):
+    return BertTokenizerFast.from_pretrained(pretrained_model_name_or_path=model_name)
 
 
 def tokenize(tokenizer, x) -> dict:
@@ -54,46 +51,31 @@ def tokenize(tokenizer, x) -> dict:
     }
 
 
-def generateModel():
-    bert = TFAutoModel.from_pretrained("bert-base-uncased")
+def generateModel(model_name):
+    config = BertConfig.from_pretrained(model_name)
+    config.num_labels = 2
+    model = TFBertForSequenceClassification.from_pretrained(model_name, config=config)
 
-    bert_layer = bert.bert
-    input_ids = Input(shape=(512,), name="input_ids", dtype="int32")
-    token_type_ids = Input(shape=(512,), name="token_type_ids", dtype="int32")
-    attention_mask = Input(shape=(512,), name="attention_mask", dtype="int32")
-    inputs = {
-        "input_ids": input_ids,
-        "token_type_ids": token_type_ids,
-        "attention_mask": attention_mask,
-    }
+    model.layers[0].trainable = False
 
-    x = bert_layer(inputs)[0]
-    x = LSTM(128)(x)
-    x = Dense(64, activation="relu")(x)
-    x = Dense(1, activation="sigmoid")(x)
-
-    model = Model(inputs=inputs, outputs=x)
-    model.layers[3].trainable = False
     return model
 
 
-def main(batch_size, epoch, learning_rate):
-    print(batch_size, epoch, learning_rate)
-
+def main(batch_size, epoch, learning_rate, model_name):
     logging.basicConfig(format="[INFO] %(message)s", level=logging.INFO)
 
-    logging.info(f"Learning rate: {learning_rate}")
-    logging.info(f"Batch size   : {batch_size}")
-    logging.info(f"Epoch        : {epoch}")
+    logging.info(f"Learning rate : {learning_rate}")
+    logging.info(f"Batch size    : {batch_size}")
+    logging.info(f"Epoch         : {epoch}")
 
     logging.info("Loading Data")
     train = pd.read_csv(TRAIN_PATH)
     test = pd.read_csv(TEST_PATH)
 
     logging.info("Preprocessing Data")
-    train = preprocess(train)
+    preprocess(train["text_a"])
 
-    tokenizer = getTokenizer()
+    tokenizer = getTokenizer(model_name)
 
     logging.info("Tokenizing Input")
     x_train = tokenize(tokenizer, train["text_a"])
@@ -103,7 +85,7 @@ def main(batch_size, epoch, learning_rate):
     y_test = test["label"].replace(MAPS)
 
     logging.info("Loading model")
-    model = generateModel()
+    model = generateModel(model_name)
     logging.info("Model Summary")
     model.summary()
 
@@ -145,10 +127,13 @@ if __name__ == "__main__":
 
     parser.add_argument("--learning_rate", required=False, help="Learning Rate")
 
+    parser.add_argument("--model", required=False, help="Model")
+
     args = parser.parse_args()
 
     main(
-        16 if args.batch_size is None else args.batch_size,
+        32 if args.batch_size is None else args.batch_size,
         2 if args.epoch is None else args.epoch,
         5e-5 if args.learning_rate is None else args.learning_rate,
+        "indobenchmark/indobert-lite-base-p2" if args.model is None else args.model,
     )
