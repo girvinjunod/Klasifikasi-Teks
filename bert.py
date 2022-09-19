@@ -1,24 +1,18 @@
-import os
-
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
-
-import sys
+import argparse
 import logging
+import os
 import pickle
+
 import numpy as np
 import pandas as pd
-
-from tensorflow.keras.layers import Input, Dropout, Dense, LSTM
+from tensorflow.keras.layers import LSTM, Dense, Input
 from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import Adam
+from transformers import BertConfig, BertTokenizerFast, TFAutoModel
 
-from utils.constants import TRAIN_PATH, TEST_PATH, MAPS
+from utils.constants import MAPS, TEST_PATH, TRAIN_PATH
 
-from transformers import (
-    BertConfig,
-    BertTokenizerFast,
-    TFAutoModel,
-)
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
 
 def preprocess(train):
@@ -83,8 +77,15 @@ def generateModel():
     return model
 
 
-def main():
+def main(batch_size, epoch, learning_rate):
+    print(batch_size, epoch, learning_rate)
+
     logging.basicConfig(format="[INFO] %(message)s", level=logging.INFO)
+
+    logging.info(f"Learning rate: {learning_rate}")
+    logging.info(f"Batch size   : {batch_size}")
+    logging.info(f"Epoch        : {epoch}")
+
     logging.info("Loading Data")
     train = pd.read_csv(TRAIN_PATH)
     test = pd.read_csv(TEST_PATH)
@@ -106,7 +107,7 @@ def main():
     logging.info("Model Summary")
     model.summary()
 
-    optimizer = Adam(learning_rate=5e-5)
+    optimizer = Adam(learning_rate=learning_rate)
 
     model.compile(loss="binary_crossentropy", optimizer=optimizer, metrics=["accuracy"])
 
@@ -114,16 +115,40 @@ def main():
     model.fit(
         x=x_train,
         y=y_train,
-        batch_size=8,
-        epochs=5,
+        batch_size=batch_size,
+        epochs=epoch,
         verbose=True,
         validation_data=(x_test, y_test),
     )
 
     logging.info("Saving Model")
-    model.save_weights("bert.h5", model)
+    model.save_weights(
+        f"dump/bert_lr-{learning_rate}_bs-{batch_size}_ep-{epoch}.h5", model
+    )
     logging.info("Model saved")
+
+    logging.info("Saving Prediction")
+    y_pred = model.predict(x_test, batch_size=batch_size, verbose=True)
+    pickle.dump(
+        y_pred,
+        open(f"dump/y_pred_lr-{learning_rate}_bs-{batch_size}_ep-{epoch}.pkl", "wb"),
+    )
+    logging.info("Prediction Saved")
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument("--batch_size", required=False, help="Batch Size")
+
+    parser.add_argument("--epoch", required=False, help="Epoch")
+
+    parser.add_argument("--learning_rate", required=False, help="Learning Rate")
+
+    args = parser.parse_args()
+
+    main(
+        16 if args.batch_size is None else args.batch_size,
+        2 if args.epoch is None else args.epoch,
+        5e-5 if args.learning_rate is None else args.learning_rate,
+    )
