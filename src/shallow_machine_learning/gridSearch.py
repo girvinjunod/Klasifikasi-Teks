@@ -2,8 +2,8 @@
 
 from xgboost import XGBClassifier
 import pandas as pd
-from sklearn import metrics
 from sklearn.model_selection import GridSearchCV
+from sklearn.feature_extraction.text import CountVectorizer
 
 maps = {"no": 0, "yes": 1}
 
