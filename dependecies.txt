@@ -1,0 +1,12 @@
+sklearn
+ipykernel
+xgboost
+pandas
+gensim
+numpy
+tensorflow
+keras
+matplotlib
+seaborn
+emoji
+transformers
